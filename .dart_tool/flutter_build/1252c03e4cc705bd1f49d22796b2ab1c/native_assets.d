@@ -1,0 +1,1 @@
+ C:\\Users\\Windows\\Documents\\teste_lixeiras\\.dart_tool\\flutter_build\\1252c03e4cc705bd1f49d22796b2ab1c\\native_assets.yaml: 
