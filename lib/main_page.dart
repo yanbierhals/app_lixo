@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:qr_code_scanner/qr_code_scanner.dart'; // Importação para leitura de QR code
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -12,6 +13,8 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   CameraController? _cameraController;
   List<CameraDescription>? cameras;
+  final GlobalKey qrKey = GlobalKey(debugLabel: 'QR'); // Chave para o QR Scanner
+  QRViewController? qrViewController;
 
   @override
   void initState() {
@@ -19,35 +22,46 @@ class _MainPageState extends State<MainPage> {
     _initializeCamera();
   }
 
-  // Inicializa as câmeras disponíveis
   Future<void> _initializeCamera() async {
     cameras = await availableCameras();
   }
 
-  // Solicita permissão para a câmera e abre a câmera
   Future<void> _requestCameraPermissionAndOpen() async {
     final status = await Permission.camera.request();
-    print(status.isGranted);
     if (status.isGranted) {
-      _openCamera();
+      _openQRScanner();
     } else {
       _showPermissionDeniedDialog();
     }
   }
 
-  // Abre a câmera
-  void _openCamera() {
-    if (cameras != null && cameras!.isNotEmpty) {
-      // Inicializa o controlador da câmera com a primeira câmera disponível
-      _cameraController = CameraController(cameras![0], ResolutionPreset.high);
-      _cameraController!.initialize().then((_) {
-        if (!mounted) return;
-        setState(() {});
-      });
-    }
+  void _openQRScanner() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          content: SizedBox(
+            width: 300,
+            height: 300,
+            child: QRView(
+              key: qrKey,
+              onQRViewCreated: _onQRViewCreated,
+            ),
+          ),
+        );
+      },
+    );
   }
 
-  // Exibe o diálogo quando a permissão é negada
+  void _onQRViewCreated(QRViewController controller) {
+    qrViewController = controller;
+    qrViewController!.scannedDataStream.listen((scanData) {
+      print('QR Code Lido: ${scanData.code}'); // Printa o QR code no terminal
+      qrViewController?.dispose(); // Fecha o scanner após ler o QR
+      Navigator.of(context).pop(); // Fecha o diálogo
+    });
+  }
+
   void _showPermissionDeniedDialog() {
     showDialog(
       context: context,
@@ -100,22 +114,17 @@ class _MainPageState extends State<MainPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Exibe a visualização da câmera se o controlador estiver inicializado
             if (_cameraController != null && _cameraController!.value.isInitialized)
               SizedBox(
                 width: 300,
                 height: 300,
-                child: CameraPreview(_cameraController!), // Exibe o preview da câmera
+                child: CameraPreview(_cameraController!),
               )
             else
-              Text('Aguardando a inicialização da câmera...'), // Exibe mensagem de carregamento
-
+              Text('Aguardando a inicialização da câmera...'),
             SizedBox(height: 20),
-
-            // Botão para solicitar permissão e abrir a câmera
             ElevatedButton(
               onPressed: () async {
-                // Chama a função para solicitar permissão e abrir a câmera
                 await _requestCameraPermissionAndOpen();
               },
               style: ElevatedButton.styleFrom(
@@ -124,7 +133,7 @@ class _MainPageState extends State<MainPage> {
                 padding: EdgeInsets.all(10),
               ),
               child: Image.asset(
-                'assets/ScanMe.png', // Imagem no assets
+                'assets/ScanMe.png',
                 fit: BoxFit.contain,
               ),
             ),
@@ -136,8 +145,8 @@ class _MainPageState extends State<MainPage> {
 
   @override
   void dispose() {
-    // Libera o controlador da câmera ao sair da tela
     _cameraController?.dispose();
+    qrViewController?.dispose();
     super.dispose();
   }
 }
