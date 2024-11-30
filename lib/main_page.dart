@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:camera/camera.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:qr_code_scanner/qr_code_scanner.dart'; // Importação para leitura de QR code
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:async';  // Importa a biblioteca para controle de tempo
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -11,81 +12,77 @@ class MainPage extends StatefulWidget {
 }
 
 class _MainPageState extends State<MainPage> {
-  CameraController? _cameraController;
-  List<CameraDescription>? cameras;
-  final GlobalKey qrKey = GlobalKey(debugLabel: 'QR'); // Chave para o QR Scanner
-  QRViewController? qrViewController;
+  String qrCodeData = "Nenhum código lido";
+  bool isPostSent = false;  // Variável para controlar se o POST já foi enviado
+  bool isScanning = true;    // Variável para controlar se o scanner está ativo
+  bool isSending = false;    // Variável para controlar se a requisição POST está sendo enviada
 
-  @override
-  void initState() {
-    super.initState();
-    _initializeCamera();
-  }
+  // Método para enviar os dados via POST
+  Future<void> sendQRCodeData(String idLixeira) async {
+    // Impede múltiplas requisições rápidas
+    if (isSending) return; // Verifica se já está enviando, se sim, não faz mais nada
 
-  Future<void> _initializeCamera() async {
-    cameras = await availableCameras();
-  }
+    setState(() {
+      isSending = true;  // Inicia o envio da requisição
+    });
 
-  Future<void> _requestCameraPermissionAndOpen() async {
-    final status = await Permission.camera.request();
-    if (status.isGranted) {
-      _openQRScanner();
-    } else {
-      _showPermissionDeniedDialog();
+    final url = Uri.parse('https://api-lixo.onrender.com/api/leituras/inserir');
+
+    // Corpo da requisição
+    final body = jsonEncode({
+      "id_usuario": 12, // Exemplo de id_usuario, pode ser alterado conforme necessário
+      "id_lixeira": idLixeira,
+    });
+
+    // Cabeçalhos da requisição
+    final headers = {
+      "Content-Type": "application/json",
+    };
+
+    try {
+      // Enviando a requisição POST
+      final response = await http.post(
+        url,
+        headers: headers,
+        body: body,
+      );
+
+      // Verifica se a requisição foi bem-sucedida
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('Dados enviados com sucesso!');
+        // Exibe a notificação de sucesso
+        showSuccessNotification();
+      } else {
+        print('Erro ao enviar dados: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Erro: $e');
+    } finally {
+      // Após 2 segundos, permite uma nova leitura
+      await Future.delayed(Duration(seconds: 2)); // Intervalo de 2 segundos
+      setState(() {
+        isSending = false;  // Permite enviar outra requisição
+      });
     }
   }
 
-  void _openQRScanner() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          content: SizedBox(
-            width: 300,
-            height: 300,
-            child: QRView(
-              key: qrKey,
-              onQRViewCreated: _onQRViewCreated,
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _onQRViewCreated(QRViewController controller) {
-    qrViewController = controller;
-    qrViewController!.scannedDataStream.listen((scanData) {
-      print('QR Code Lido: ${scanData.code}'); // Printa o QR code no terminal
-      qrViewController?.dispose(); // Fecha o scanner após ler o QR
-      Navigator.of(context).pop(); // Fecha o diálogo
+  // Método para exibir a notificação de sucesso
+  void showSuccessNotification() {
+    setState(() {
+      isPostSent = true;  // Marca que o POST foi enviado
+      isScanning = false; // Desativa o scanner após a leitura
     });
-  }
 
-  void _showPermissionDeniedDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Permissão Negada'),
-          content: Text('É necessário conceder a permissão para usar a câmera.'),
-          actions: <Widget>[
-            TextButton(
-              child: Text('OK'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
+    // Exibe a notificação de sucesso
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Lixeira lida com sucesso!')),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Página Principal')),
+      appBar: AppBar(title: Text('Leitor de QR Code')),
       drawer: Drawer(
         child: ListView(
           children: [
@@ -114,39 +111,39 @@ class _MainPageState extends State<MainPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (_cameraController != null && _cameraController!.value.isInitialized)
+            // Exibe o scanner de QR Code apenas se o POST ainda não foi enviado
+            if (isScanning)
               SizedBox(
                 width: 300,
                 height: 300,
-                child: CameraPreview(_cameraController!),
-              )
-            else
-              Text('Aguardando a inicialização da câmera...'),
+                child: MobileScanner(
+                  onDetect: (BarcodeCapture barcodeCapture) {
+                    if (!isPostSent && !isSending) {
+                      final barcode = barcodeCapture.barcodes.first; // Obtém o primeiro código de barras detectado
+                      if (barcode.rawValue != null) {
+                        setState(() {
+                          qrCodeData = barcode.rawValue!;
+                        });
+                        // Chama o método para enviar os dados via POST
+                        sendQRCodeData(qrCodeData);
+                      }
+                    }
+                  },
+                ),
+              ),
             SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () async {
-                await _requestCameraPermissionAndOpen();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.cyanAccent,
-                shape: CircleBorder(),
-                padding: EdgeInsets.all(10),
-              ),
-              child: Image.asset(
-                'assets/ScanMe.png',
-                fit: BoxFit.contain,
-              ),
+            Text(
+              'Conteúdo do QR Code:',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 10),
+            Text(
+              qrCodeData,
+              style: TextStyle(fontSize: 16),
             ),
           ],
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _cameraController?.dispose();
-    qrViewController?.dispose();
-    super.dispose();
   }
 }

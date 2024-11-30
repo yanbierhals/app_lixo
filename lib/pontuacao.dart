@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:percent_indicator/percent_indicator.dart';
+import 'leituras_service.dart';
 
 class Pontuacao extends StatefulWidget {
   const Pontuacao({super.key});
@@ -9,11 +10,31 @@ class Pontuacao extends StatefulWidget {
 }
 
 class _PontuacaoState extends State<Pontuacao> {
-  int pontuacaoAtual = 20;
+  int pontuacaoAtual = 0;
+  final LeiturasService _leiturasService = LeiturasService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLeituras();  // Chama a função para carregar as leituras assim que o widget for inicializado
+  }
+
+  // Função para carregar as leituras e atualizar a pontuação
+  Future<void> _loadLeituras() async {
+    try {
+      List<dynamic> leituras = await _leiturasService.listarLeituras();
+      print("Leituras carregadas: $leituras");  // Verifique o que está sendo retornado
+      setState(() {
+        pontuacaoAtual = leituras.length;  // Atualiza a pontuação com o número de leituras
+      });
+    } catch (e) {
+      print('Erro ao carregar leituras: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    double progresso = (pontuacaoAtual / 150).clamp(0.0, 1.0);
+    double progresso = (pontuacaoAtual / 100).clamp(0.0, 1.0);  // Limita o valor entre 0 e 1
 
     return Scaffold(
       appBar: AppBar(
@@ -37,16 +58,7 @@ class _PontuacaoState extends State<Pontuacao> {
                   progressColor: Colors.green,
                   circularStrokeCap: CircularStrokeCap.round,
                   arcType: ArcType.HALF,
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () {
-                    setState(() {
-                      pontuacaoAtual++; // Incrementa a pontuação
-                    });
-                  },
-                  child: const Text('Incrementar Pontuação'),
-                ),
+                )
               ],
             ),
           ),
